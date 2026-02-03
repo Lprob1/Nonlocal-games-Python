@@ -98,6 +98,8 @@ for strat in n_players_strats:
     # strat is smtg like this: (((0, 0), (1, 0)), ((0, 0), (1, 0)))
     #this is behavior data. I must generate all possible questions, then find the behavior
     dict_strat = {}
+    #just trying github things
+    pass
 # FINISH THIS   
 
 # for strat in n_players_strats:
