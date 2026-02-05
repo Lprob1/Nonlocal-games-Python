@@ -77,9 +77,6 @@ for strat in n_players_strats:
     dict_strat = strategy_tuple_to_dict(strat)
     dict_strats.append(dict_strat)
 
-    
-for s in dict_strats:
-    print(s)
 
 def calculate_chsh_exclusion(strategy: dict, W: Callable):
     questions = strategy.keys()
@@ -96,4 +93,11 @@ def calculate_chsh_exclusion(strategy: dict, W: Callable):
     return exclusion_set
 
 all_exclusion_sets = [calculate_chsh_exclusion(s, W) for s in dict_strats]
-# print(all_exclusion_sets)
+frozen_all_exclusion_sets = [frozenset(s) for s in all_exclusion_sets]
+#this must be turned into frozensets (unmutable)
+unique_exclusion_sets = set(frozen_all_exclusion_sets)
+print(unique_exclusion_sets)
+print(len(unique_exclusion_sets))
+
+#map the strategies to their exclusion set
+#they are still in order
