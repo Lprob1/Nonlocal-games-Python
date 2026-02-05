@@ -166,8 +166,6 @@ def satisfies_hiding_criterion(a_i, a_j, x, t, W):
 
 
 #now, fill the graph edges
-#right now, we compute everything in the table twice, it's not optimal
-# becaues we compute s_i, s_j in the predicate
 def Winning_predicate(x, a):
     """
     Docstring for Winning_predicate
@@ -200,7 +198,55 @@ for t in range(1): #just one for now, but we
 # print("num labels:", len(nx.get_edge_attributes(G, "label")))
 
 #now, turn this into a SAT problem
+# CLAUSE FORMAT
+# x_i: for color i, x_i = 0 for left side, x_i = 1 for right side
+"""
+Clauses go as follows:
+[1,2]: x_1 OR x_2
+[1, -2]: x_1 OR not x_2
+[[1, 2], [2, 3]]: (x_1 OR x_2) AND (x_2 OR x_3)
+"""
+clauses = []
 
+nodes = G.nodes() #normally, just the list of strategies
+# print(nodes)
+for node in nodes:
+    neighbours = G[node] #gets all the neighbours
+    # print(neighbours)
+    #what we want: find S(v, t): neighbours of vertex v with edge type t
+    #we have to iterate over all edge types
+    
+    for tau in range(n_questions): #edge type t, t is already taken for number of players
+        S_vt = []
+        for neighbour, edges in neighbours.items():
+            #now, iterate over the edges, check if they are equal to tau
+            #edges is a dict
+            for edge_id, edge in edges.items():
+                if edge["label"] == tau:
+                    S_vt.append(neighbour)
+        #create OR clause with COLORS of nodes of S_vt
+        S_vt_colors = [G.nodes[s]["col"] for s in S_vt]
+        #add the node itself
+        S_vt_colors.append(G.nodes[node]["col"])
+        OR_clause_1 = [x+1 for x in S_vt_colors]
+        OR_clause_2 = [-x-1 for x in S_vt_colors] #doesnt want x_0, so have to convert back after
+        clauses.append(OR_clause_1)
+        clauses.append(OR_clause_2)
+    #create OR clauses with nodes with COLORS of S_vt
+           
+#plug in the solver
+# print(clauses)
+cnf = CNF(from_clauses=clauses)
+with Solver(bootstrap_with=cnf) as solver:
+    # 1.1 call the solver for this formula:
+    print('formula is', f'{"s" if solver.solve() else "uns"}atisfiable')
+
+    # 1.2 the formula is satisfiable and so has a model:
+    print('and the model is:', solver.get_model())
+
+    # 2.2 the formula is unsatisfiable,
+    # i.e. an unsatisfiable core can be extracted:
+    print('and the unsatisfiable core is:', solver.get_core())
 
 #this works to display G with colors, we can add edges later
 #let's just try to display G with a coloring
@@ -208,16 +254,28 @@ cols = set(nx.get_node_attributes(G, "col").values())
 mapping = dict(zip(sorted(cols),count()))
 nodes = G.nodes()
 colors = [mapping[G.nodes[n]['col']] for n in nodes]
-edge_labels = nx.get_edge_attributes(G, "label")
 
 
 pos = nx.spring_layout(G)
-ec = nx.draw_networkx_edges(G, pos, alpha=0.2, connectionstyle="arc3,rad=0.15")
+edge_labels = {}
+for u, v, k, d in G.edges(keys=True, data=True):
+    edge_labels.setdefault((u, v), []).append(str(d["label"]))
+
+edge_labels = {e: ",".join(lbls) for e, lbls in edge_labels.items()}
+
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
+ec = nx.draw_networkx_edges(G, pos, alpha=0.2, ) #connectionstyle="arc3,rad=0.15"
 nc = nx.draw_networkx_nodes(G, pos, nodelist=nodes, node_color=colors, node_size=100, cmap=plt.cm.jet)
 el = nx.draw_networkx_edge_labels(
     G, pos,
     edge_labels=edge_labels,
     font_size=8
+)
+lb = nx.draw_networkx_labels(
+    G, pos,
+    labels={n: str(n) for n in G.nodes()},
+    font_size=9,
+    font_color="white"
 )
 plt.colorbar(nc)
 plt.axis('off')
