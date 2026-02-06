@@ -206,6 +206,16 @@ Clauses go as follows:
 [1, -2]: x_1 OR not x_2
 [[1, 2], [2, 3]]: (x_1 OR x_2) AND (x_2 OR x_3)
 """
+
+#create a win-table, so we can skip the no-win-case
+win_table = np.zeros((n_strategies, n_questions), dtype=np.int8)
+for s in range(n_strategies):
+    for q in range(n_questions):
+        x = all_questions[q]
+        a = answers_table[s, q, :]
+        win_table[s, q] = Winning_predicate(x, a)
+
+
 clauses = []
 
 nodes = G.nodes() #normally, just the list of strategies
@@ -217,6 +227,8 @@ for node in nodes:
     #we have to iterate over all edge types
     
     for tau in range(n_questions): #edge type t, t is already taken for number of players
+        if win_table[node, tau] == 0:
+            continue
         S_vt = []
         for neighbour, edges in neighbours.items():
             #now, iterate over the edges, check if they are equal to tau
@@ -227,7 +239,10 @@ for node in nodes:
         #create OR clause with COLORS of nodes of S_vt
         S_vt_colors = [G.nodes[s]["col"] for s in S_vt]
         #add the node itself
-        S_vt_colors.append(G.nodes[node]["col"])
+        #if S_vt is none, can't append the node, otherwise it yields unsat constraint automatically
+        if len(S_vt) == 0:
+            continue
+        S_vt_colors.append(G.nodes[node]["col"] + 1)
         OR_clause_1 = [x+1 for x in S_vt_colors]
         OR_clause_2 = [-x-1 for x in S_vt_colors] #doesnt want x_0, so have to convert back after
         clauses.append(OR_clause_1)
@@ -237,46 +252,127 @@ for node in nodes:
 #plug in the solver
 # print(clauses)
 cnf = CNF(from_clauses=clauses)
-with Solver(bootstrap_with=cnf) as solver:
-    # 1.1 call the solver for this formula:
-    print('formula is', f'{"s" if solver.solve() else "uns"}atisfiable')
+solver = Solver(bootstrap_with=cnf)
+sat = solver.solve()
+if not sat:
+    print("Model Unsatisfiable")
 
-    # 1.2 the formula is satisfiable and so has a model:
-    print('and the model is:', solver.get_model())
+model = solver.get_model()
+# with Solver(bootstrap_with=cnf) as solver:
+#     # 1.1 call the solver for this formula:
+#     print('formula is', f'{"s" if solver.solve() else "uns"}atisfiable')
+    
+#     # 1.2 the formula is satisfiable and so has a model:
+#     print('and the model is:', solver.get_model())
 
-    # 2.2 the formula is unsatisfiable,
-    # i.e. an unsatisfiable core can be extracted:
-    print('and the unsatisfiable core is:', solver.get_core())
+#     # 2.2 the formula is unsatisfiable,
+#     # i.e. an unsatisfiable core can be extracted:
+#     print('and the unsatisfiable core is:', solver.get_core())
 
-#this works to display G with colors, we can add edges later
-#let's just try to display G with a coloring
+# ---- after solving ----
+
+# model = solver.get_model()
+print(model)
+if model is None:
+    raise RuntimeError("UNSAT: no partition to plot")
+
+# number of color-variables (same as number of unique exclusion sets)
+n_colors = len(unique_exclusion_sets_list)
+
+# Build assignment: var k in {1..n_colors} -> 0/1
+# model contains literals; positive means True (1), negative means False (0)
+assign = {k: 0 for k in range(1, n_colors + 1)}
+for lit in model:
+    v = abs(lit)
+    if 1 <= v <= n_colors:
+        assign[v] = 1 if lit > 0 else 0
+
+# Map: color -> side ("L" if 0, "R" if 1)
+color_side = {color: ("R" if assign[color + 1] == 1 else "L")
+              for color in range(n_colors)}
+
+# Map: node -> side based on its color
+node_side = {n: color_side[G.nodes[n]["col"]] for n in G.nodes()}
+
+# ---- layout: spring + hard split on x-axis ----
+pos = nx.spring_layout(G, seed=0)
+
+left_nodes  = [n for n in G.nodes() if node_side[n] == "L"]
+right_nodes = [n for n in G.nodes() if node_side[n] == "R"]
+
+# push left to x<0 and right to x>0 while keeping y from spring_layout
+for n in left_nodes:
+    pos[n] = np.array([-(abs(pos[n][0]) + 0.8), pos[n][1]])
+for n in right_nodes:
+    pos[n] = np.array([( abs(pos[n][0]) + 0.8), pos[n][1]])
+
+# Keep your original node color (exclusion-set color) for coloring
 cols = set(nx.get_node_attributes(G, "col").values())
-mapping = dict(zip(sorted(cols),count()))
-nodes = G.nodes()
-colors = [mapping[G.nodes[n]['col']] for n in nodes]
+mapping = dict(zip(sorted(cols), count()))
+node_colors = [mapping[G.nodes[n]["col"]] for n in G.nodes()]
 
+plt.figure(figsize=(10, 6))
+nx.draw_networkx_edges(G, pos, alpha=0.15)
 
-pos = nx.spring_layout(G)
+# draw left and right separately so it’s visually obvious
+nx.draw_networkx_nodes(G, pos, nodelist=left_nodes,
+                       node_color=[node_colors[list(G.nodes()).index(n)] for n in left_nodes],
+                       node_size=160, cmap=plt.cm.jet, linewidths=1.0, edgecolors="black")
+nx.draw_networkx_nodes(G, pos, nodelist=right_nodes,
+                       node_color=[node_colors[list(G.nodes()).index(n)] for n in right_nodes],
+                       node_size=160, cmap=plt.cm.jet, linewidths=1.0, edgecolors="black")
+
+# labels = node id
+# nx.draw_networkx_labels(G, pos, labels={n: str(n) for n in G.nodes()},
+#                         font_size=8, font_color="white")
+
+# optional: draw edge labels
 edge_labels = {}
 for u, v, k, d in G.edges(keys=True, data=True):
     edge_labels.setdefault((u, v), []).append(str(d["label"]))
-
 edge_labels = {e: ",".join(lbls) for e, lbls in edge_labels.items()}
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7)
 
-nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
-ec = nx.draw_networkx_edges(G, pos, alpha=0.2, ) #connectionstyle="arc3,rad=0.15"
-nc = nx.draw_networkx_nodes(G, pos, nodelist=nodes, node_color=colors, node_size=100, cmap=plt.cm.jet)
-el = nx.draw_networkx_edge_labels(
-    G, pos,
-    edge_labels=edge_labels,
-    font_size=8
-)
-lb = nx.draw_networkx_labels(
-    G, pos,
-    labels={n: str(n) for n in G.nodes()},
-    font_size=9,
-    font_color="white"
-)
-plt.colorbar(nc)
-plt.axis('off')
+# vertical divider at x=0
+plt.axvline(0.0, linewidth=1.0)
+
+plt.title("SAT bipartition: model '-' = left, '+' = right (by color-variable)")
+plt.axis("off")
 plt.show()
+
+
+
+#this works to display G with colors, we can add edges later
+#let's just try to display G with a coloring
+# cols = set(nx.get_node_attributes(G, "col").values())
+# mapping = dict(zip(sorted(cols),count()))
+# nodes = G.nodes()
+# colors = [mapping[G.nodes[n]['col']] for n in nodes]
+
+
+
+# pos = nx.spring_layout(G)
+# edge_labels = {}
+# for u, v, k, d in G.edges(keys=True, data=True):
+#     edge_labels.setdefault((u, v), []).append(str(d["label"]))
+
+# edge_labels = {e: ",".join(lbls) for e, lbls in edge_labels.items()}
+
+# nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
+# ec = nx.draw_networkx_edges(G, pos, alpha=0.2, ) #connectionstyle="arc3,rad=0.15"
+# nc = nx.draw_networkx_nodes(G, pos, nodelist=nodes, node_color=colors, node_size=100, cmap=plt.cm.jet)
+# el = nx.draw_networkx_edge_labels(
+#     G, pos,
+#     edge_labels=edge_labels,
+#     font_size=8
+# )
+# # don't necessarily want to draw these, weird and computationally expensive
+# # lb = nx.draw_networkx_labels(
+# #     G, pos,
+# #     labels={n: str(n) for n in G.nodes()},
+# #     font_size=9,
+# #     font_color="white"
+# # )
+# plt.colorbar(nc)
+# plt.axis('off')
+# plt.show()
