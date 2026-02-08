@@ -311,8 +311,8 @@ for n in right_nodes:
     ])
 
 #print the node exclusion set number
-print([G.nodes[n]["col"] for n in G.nodes()])
-# there really are 4 colors...
+# print([G.nodes[n]["col"] for n in G.nodes()])
+# # there really are 4 colors...
 
 # Keep your original node color (exclusion-set color) for coloring
 cols = set(nx.get_node_attributes(G, "col").values())

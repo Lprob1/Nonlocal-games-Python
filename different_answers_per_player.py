@@ -1,3 +1,8 @@
+#testing an idea from a paper of a game where questions are strings of hamming weight two
+#something is fishy here, it seems like we only have two colors on the graph, i'm unsure why that's happening. 
+#fixed it: it was counting the number of things in the exclusion set, and putting a color with that... can fix that on the other one too, but tbd
+# It still seems to work, there IS a bipartition satisfying the hiding criterion...
+
 from pprint import pprint
 from itertools import product
 from itertools import count
@@ -12,30 +17,38 @@ import numpy as np
 from pysat.formula import CNF
 from pysat.solvers import Solver
 
-def pprint_input_output(strat: tuple[tuple[Any], tuple[Any]]):
-    """
-    Docstring for pprint_input_output
-    
-    :param strat: A pair of input-output
-    :type strat: tuple[tuple[Any], tuple[Any]]
-    """
-    
-    inp = strat[0]
-    out = strat[1]
-    print(f"{inp} -> {out}")
+"""
+I want to try to find an example where we can't find a bipartition. I'll try something where the answer sets of the players differ
+Winning predicate: let's do the string of hamming weight 2 again, but the answer sets of the players only have one element in common
+I think that if you have a winning predicate that is always satisfied, you can have a case where you con't have a bipartition. Then,
+that's not a nonlocal game anymore. I'll still test it just for completeness
+This might be interesting:
+https://cs.uwaterloo.ca/~watrous/QIT-notes/QIT-notes.06.pdf
 
-X = [0,1]
+So a function with a fully winning predicate (true for any question answer), with different answers for each players, still can find a bipartition 
+satisfying the predicate (although it was all one sided) -> even if you put answer sets of different length for players
+"""
+
+X = [0,1, 2]
 A = [0,1] #tried it with 0,1,2, quite slower
-n_players = 2
-#winning predicate for the CHSH game
-def W(x,y,a,b):
-    tmp = x * y
-    tmp2 = (a + b) % 2
-    if tmp == tmp2:
-        return 1
-    else:
-        return 0
+A1 = [0, 1]
+A2 = [1, 2]
+A3 = [1, 0]
+n_players = 3
 
+def Winning_predicate(x, a):
+    """
+    Docstring for Winning_predicate
+    
+    :param x: question
+    :param a: answer
+    """
+    
+    #let's for now always do a winning predicate
+    for xi, ai in zip(x, a):
+        if xi != ai:
+            return 0
+    return 1
 
 def strategy_tuple_to_dict(strategy_tuple):
     """
@@ -68,16 +81,32 @@ X_t = Hashable
 A_t = Hashable
 Strategy = Tuple[Tuple[X_t, A_t], ...]
 
-def all_strategies(X: Iterable[X_t], A: Iterable[A_t]) -> List[Strategy]:
-    X = tuple(X)
-    A = tuple(A)
-    return [tuple(zip(X, outputs)) for outputs in product(A, repeat=len(X))]
+#rewrite this function so that 
+# def all_strategies(X: Iterable[X_t], As) -> List[Strategy]:
+#     X = tuple(X)
+#     A1 = As[0]
+#     A2 = As[1]
+#     A3 = As[2]
+#     #return [tuple(zip(X, outputs)) for outputs in product(A, repeat=len(X))] #original line, modified to have A1, A2, A3
+#     return [tuple(zip(X, outputs)) for outputs in product([A1, A2, A3])]
 
-strats = all_strategies(X, A)
+def all_strategies_one_player(X: Iterable[X_t], A: Iterable[A_t]) -> List[Strategy]:
+    X = tuple(X)
+    return [tuple(zip(X, outputs))
+            for outputs in product(A, repeat=len(X))]
+    
+def all_joint_strategies(X, As):
+    per_player = [
+        all_strategies_one_player(X, A)
+        for A in As
+    ]
+    return list(product(*per_player))
+
+strats = all_joint_strategies(X, [A1, A2, A3])
 for strat in strats:
     print(strat)
-n_players_strats = list(product(strats, repeat=n_players))
-
+# n_players_strats = list(product(strats, repeat=n_players))
+n_players_strats = strats
 dict_strats = []
 for strat in n_players_strats:
     # how many tuples will there be? -> n_players , each with |X| tuples
@@ -86,35 +115,39 @@ for strat in n_players_strats:
     dict_strat = strategy_tuple_to_dict(strat)
     dict_strats.append(dict_strat)
 
+for strat in dict_strats:
+    print(strat)
+#now, we prune the strategies, to only keep the allowed questions from the game (simplest case as of now)
+# good_dict_strats = []
+# good_qs = [(0, 1, 1), (1, 0, 1), (1, 1, 0)]
 # for strat in dict_strats:
-#     print(strat)
+#     #first, remove the questions that can't happen
+#     tmp_strat = {}
+#     for q, a in strat.items():
+#         if q in good_qs:
+#             tmp_strat[q] = a
+#     good_dict_strats.append(tmp_strat)
 
-def calculate_chsh_exclusion(strategy: dict, W: Callable):
+# dict_strats = good_dict_strats
+# for s in dict_strats:
+#     print(s)
+    
+def calculate_exclusion(strategy: dict, W: Callable):
     questions = strategy.keys()
     exclusion_set = set()
     for q in questions:
-        x = q[0]
-        y = q[1]
-        ans = strategy[q]
-        a = ans[0]
-        b = ans[1]
-        winning = W(x, y, a, b)
+        a = strategy[q]
+        winning = W(q, a)
         if winning == 0:
-            exclusion_set.add((x, y))
+            exclusion_set.add(q)
     return exclusion_set
 
-all_exclusion_sets = [calculate_chsh_exclusion(s, W) for s in dict_strats]
+all_exclusion_sets = [calculate_exclusion(s, Winning_predicate) for s in dict_strats]
 frozen_all_exclusion_sets = [frozenset(s) for s in all_exclusion_sets]
 #this must be turned into frozensets (unmutable)
 unique_exclusion_sets = set(frozen_all_exclusion_sets)
 unique_exclusion_sets_list = list(unique_exclusion_sets)
-
-# each strategy will be one number, that's how well label the vertices
-# each exclusion set will have a number (color), that's how we'll color the graph
-#create a dict of strategies: exclusion set mapping to color the graph
-#iterate over this and make a graph with coloured nodes
-#for every strategy, for every question, make a table and compute the answers of players
-# for every t in range (n_players), apply the procedure to make the links between the vertices.
+print(unique_exclusion_sets_list)
 
 #create a mapping exclusion set -> color
 set_coloring = {}
@@ -139,6 +172,8 @@ for s, c in strategies_to_exclusion_set_mapping.items():
 #create the table
 n_strategies = len(n_players_strats)
 all_questions = list(product(X, repeat=n_players))
+#normally, questions are a product, but here its not the case. Make sure to take note for the general code
+# all_questions = good_qs
 n_questions = len(all_questions)
 len_answers = n_players # length of answers, just for clarity
 #so, the table is going to be a 3D array: rows: strategies, cols: questions, depth: player response
@@ -168,19 +203,7 @@ def satisfies_hiding_criterion(a_i, a_j, x, t, W):
 
 
 #now, fill the graph edges
-def Winning_predicate(x, a):
-    """
-    Docstring for Winning_predicate
-    
-    :param x: question
-    :param a: answer
-    """
-    tmp1 = x[0]*x[1]
-    tmp2 = (a[0] + a[1]) % 2
-    if tmp1 == tmp2:
-        return 1
-    else:
-        return 0
+
     
 for t in range(1): #just one for now, but we 
     for q_number in range(n_questions):
@@ -195,19 +218,6 @@ for t in range(1): #just one for now, but we
                     #add edge
                     G.add_edge(i, j, label=q_number)
             i += 1 #don't forget that...
-
-# print("num edges:", G.number_of_edges())
-# print("num labels:", len(nx.get_edge_attributes(G, "label")))
-
-#now, turn this into a SAT problem
-# CLAUSE FORMAT
-# x_i: for color i, x_i = 0 for left side, x_i = 1 for right side
-"""
-Clauses go as follows:
-[1,2]: x_1 OR x_2
-[1, -2]: x_1 OR not x_2
-[[1, 2], [2, 3]]: (x_1 OR x_2) AND (x_2 OR x_3)
-"""
 
 #create a win-table, so we can skip the no-win-case
 win_table = np.zeros((n_strategies, n_questions), dtype=np.int8)
@@ -260,18 +270,6 @@ if not sat:
     print("Model Unsatisfiable")
 
 model = solver.get_model()
-# with Solver(bootstrap_with=cnf) as solver:
-#     # 1.1 call the solver for this formula:
-#     print('formula is', f'{"s" if solver.solve() else "uns"}atisfiable')
-    
-#     # 1.2 the formula is satisfiable and so has a model:
-#     print('and the model is:', solver.get_model())
-
-#     # 2.2 the formula is unsatisfiable,
-#     # i.e. an unsatisfiable core can be extracted:
-#     print('and the unsatisfiable core is:', solver.get_core())
-
-# ---- after solving ----
 
 # model = solver.get_model()
 print(model)
@@ -302,15 +300,46 @@ pos = nx.spring_layout(G, seed=0)
 left_nodes  = [n for n in G.nodes() if node_side[n] == "L"]
 right_nodes = [n for n in G.nodes() if node_side[n] == "R"]
 
-# push left to x<0 and right to x>0 while keeping y from spring_layout
+# # push left to x<0 and right to x>0 while keeping y from spring_layout
+# for n in left_nodes:
+#     pos[n] = np.array([-(abs(pos[n][0]) + 0.8), pos[n][1]])
+# for n in right_nodes:
+#     pos[n] = np.array([( abs(pos[n][0]) + 0.8), pos[n][1]])
+x_gap = 2.0      # separation between left/right halves
+x_scale = 2.5    # horizontal spread within each half
+y_scale = 2.0    # vertical spread
+
 for n in left_nodes:
-    pos[n] = np.array([-(abs(pos[n][0]) + 0.8), pos[n][1]])
+    x, y = pos[n]
+    pos[n] = np.array([
+        -x_gap - x_scale * abs(x),
+        y_scale * y
+    ])
+
 for n in right_nodes:
-    pos[n] = np.array([( abs(pos[n][0]) + 0.8), pos[n][1]])
+    x, y = pos[n]
+    pos[n] = np.array([
+        x_gap + x_scale * abs(x),
+        y_scale * y
+    ])
+
+#print the node exclusion set number
+# print([G.nodes[n]["col"] for n in G.nodes()])
+# # there really are 4 colors...
 
 # Keep your original node color (exclusion-set color) for coloring
 cols = set(nx.get_node_attributes(G, "col").values())
-mapping = dict(zip(sorted(cols), count()))
+from matplotlib import cm, colors as mcolors
+
+cmap = cm.get_cmap("tab20")   # or "viridis", "plasma", "jet", etc.
+
+norm = mcolors.Normalize(
+    vmin=min(cols),
+    vmax=max(cols)
+)
+
+mapping = {c: cmap(norm(c)) for c in cols}
+
 node_colors = [mapping[G.nodes[n]["col"]] for n in G.nodes()]
 
 plt.figure(figsize=(10, 6))
@@ -333,7 +362,7 @@ edge_labels = {}
 for u, v, k, d in G.edges(keys=True, data=True):
     edge_labels.setdefault((u, v), []).append(str(d["label"]))
 edge_labels = {e: ",".join(lbls) for e, lbls in edge_labels.items()}
-nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7)
+# nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7)
 
 # vertical divider at x=0
 plt.axvline(0.0, linewidth=1.0)
@@ -341,40 +370,3 @@ plt.axvline(0.0, linewidth=1.0)
 plt.title("SAT bipartition: model '-' = left, '+' = right (by color-variable)")
 plt.axis("off")
 plt.show()
-
-
-
-#this works to display G with colors, we can add edges later
-#let's just try to display G with a coloring
-# cols = set(nx.get_node_attributes(G, "col").values())
-# mapping = dict(zip(sorted(cols),count()))
-# nodes = G.nodes()
-# colors = [mapping[G.nodes[n]['col']] for n in nodes]
-
-
-
-# pos = nx.spring_layout(G)
-# edge_labels = {}
-# for u, v, k, d in G.edges(keys=True, data=True):
-#     edge_labels.setdefault((u, v), []).append(str(d["label"]))
-
-# edge_labels = {e: ",".join(lbls) for e, lbls in edge_labels.items()}
-
-# nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
-# ec = nx.draw_networkx_edges(G, pos, alpha=0.2, ) #connectionstyle="arc3,rad=0.15"
-# nc = nx.draw_networkx_nodes(G, pos, nodelist=nodes, node_color=colors, node_size=100, cmap=plt.cm.jet)
-# el = nx.draw_networkx_edge_labels(
-#     G, pos,
-#     edge_labels=edge_labels,
-#     font_size=8
-# )
-# # don't necessarily want to draw these, weird and computationally expensive
-# # lb = nx.draw_networkx_labels(
-# #     G, pos,
-# #     labels={n: str(n) for n in G.nodes()},
-# #     font_size=9,
-# #     font_color="white"
-# # )
-# plt.colorbar(nc)
-# plt.axis('off')
-# plt.show()
