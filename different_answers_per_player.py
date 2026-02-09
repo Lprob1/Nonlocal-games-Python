@@ -28,14 +28,17 @@ https://cs.uwaterloo.ca/~watrous/QIT-notes/QIT-notes.06.pdf
 So a function with a fully winning predicate (true for any question answer), with different answers for each players, still can find a bipartition 
 satisfying the predicate (although it was all one sided) -> even if you put answer sets of different length for players
 """
-
-X = [0,1, 2]
+"""
+If for a given input there is only one winning strategy, hiding is impossible. Let's try to encode
+that and see how the algorithm does
+"""
+X = [0,1]
 A = [0,1] #tried it with 0,1,2, quite slower
 A1 = [0, 1]
-A2 = [1, 2]
-A3 = [1, 0]
-n_players = 3
-
+A2 = [0, 1]
+# A3 = [1, 0]
+n_players = 2
+good_qs = [(0, 0), (1, 1)]
 def Winning_predicate(x, a):
     """
     Docstring for Winning_predicate
@@ -43,12 +46,22 @@ def Winning_predicate(x, a):
     :param x: question
     :param a: answer
     """
-    
-    #let's for now always do a winning predicate
-    for xi, ai in zip(x, a):
-        if xi != ai:
+    # x = 00, only good answer is 01
+    # x = 11, only good answer is 10
+    a1 = a[0]
+    a2 = a[1]
+    if x == (0, 0):
+        if (a1, a2) == (0, 1):
+            return 1
+        else:
             return 0
-    return 1
+    else:
+        if (a1, a2) == (1, 0):
+            return 1
+        else:
+            return 0
+    return 0
+        
 
 def strategy_tuple_to_dict(strategy_tuple):
     """
@@ -102,7 +115,7 @@ def all_joint_strategies(X, As):
     ]
     return list(product(*per_player))
 
-strats = all_joint_strategies(X, [A1, A2, A3])
+strats = all_joint_strategies(X, [A1, A2])
 for strat in strats:
     print(strat)
 # n_players_strats = list(product(strats, repeat=n_players))
@@ -115,22 +128,22 @@ for strat in n_players_strats:
     dict_strat = strategy_tuple_to_dict(strat)
     dict_strats.append(dict_strat)
 
-for strat in dict_strats:
-    print(strat)
-#now, we prune the strategies, to only keep the allowed questions from the game (simplest case as of now)
-# good_dict_strats = []
-# good_qs = [(0, 1, 1), (1, 0, 1), (1, 1, 0)]
 # for strat in dict_strats:
-#     #first, remove the questions that can't happen
-#     tmp_strat = {}
-#     for q, a in strat.items():
-#         if q in good_qs:
-#             tmp_strat[q] = a
-#     good_dict_strats.append(tmp_strat)
+#     print(strat)
+#now, we prune the strategies, to only keep the allowed questions from the game (simplest case as of now)
+good_dict_strats = []
+# good_qs = [(0, 1, 1), (1, 0, 1), (1, 1, 0)]
+for strat in dict_strats:
+    #first, remove the questions that can't happen
+    tmp_strat = {}
+    for q, a in strat.items():
+        if q in good_qs:
+            tmp_strat[q] = a
+    good_dict_strats.append(tmp_strat)
 
-# dict_strats = good_dict_strats
-# for s in dict_strats:
-#     print(s)
+dict_strats = good_dict_strats
+for s in dict_strats:
+    print(s)
     
 def calculate_exclusion(strategy: dict, W: Callable):
     questions = strategy.keys()
@@ -171,9 +184,9 @@ for s, c in strategies_to_exclusion_set_mapping.items():
 
 #create the table
 n_strategies = len(n_players_strats)
-all_questions = list(product(X, repeat=n_players))
+# all_questions = list(product(X, repeat=n_players))
 #normally, questions are a product, but here its not the case. Make sure to take note for the general code
-# all_questions = good_qs
+all_questions = good_qs
 n_questions = len(all_questions)
 len_answers = n_players # length of answers, just for clarity
 #so, the table is going to be a 3D array: rows: strategies, cols: questions, depth: player response
