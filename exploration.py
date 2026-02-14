@@ -61,7 +61,6 @@ def strategy_tuple_to_dict(strategy_tuple):
     return strategy
 
 view_for_one_player = list(product(X, A)) # list of possible input-output pairs for one bit
-#I want a list that looks like this:
 
 #at last, that's it.
 X_t = Hashable
